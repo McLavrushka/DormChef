@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
 from backend.database import create_recipe
@@ -26,37 +28,63 @@ def _session_factory(tmp_path: Path) -> sessionmaker:
     return sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-def test_recipe_crud_flow(tmp_path: Path) -> None:
+def _recipe_payload() -> dict[str, object]:
+    return {
+        "title": "Egg Toast",
+        "description": "Quick dorm breakfast",
+        "ingredients": ["egg", "bread", "salt"],
+        "steps": ["Beat egg", "Toast bread", "Combine"],
+    }
+
+
+@pytest.fixture
+def session(tmp_path: Path) -> Session:
     session_factory = _session_factory(tmp_path)
+    with session_factory() as db_session:
+        yield db_session
 
-    with session_factory() as session:
-        created = create_recipe(
-            session,
-            title="Egg Toast",
-            description="Quick dorm breakfast",
-            ingredients=["egg", "bread", "salt"],
-            steps=["Beat egg", "Toast bread", "Combine"],
-        )
 
-        assert created.id is not None
-        assert created.title == "Egg Toast"
+def test_create_recipe(session: Session) -> None:
+    created = create_recipe(session, **_recipe_payload())
 
-        fetched = get_recipe(session, created.id)
-        assert fetched is not None
-        assert fetched.ingredients == ["egg", "bread", "salt"]
+    assert created.id is not None
+    assert created.title == "Egg Toast"
 
-        updated = update_recipe(
-            session,
-            created.id,
-            description="Quick breakfast in 10 minutes",
-            ingredients=["egg", "bread", "salt", "pepper"],
-        )
-        assert updated is not None
-        assert updated.description == "Quick breakfast in 10 minutes"
-        assert "pepper" in updated.ingredients
 
-        all_recipes = list_recipes(session)
-        assert len(all_recipes) == 1
+def test_get_recipe(session: Session) -> None:
+    created = create_recipe(session, **_recipe_payload())
 
-        assert delete_recipe(session, created.id) is True
-        assert get_recipe(session, created.id) is None
+    fetched = get_recipe(session, created.id)
+
+    assert fetched is not None
+    assert fetched.ingredients == ["egg", "bread", "salt"]
+
+
+def test_update_recipe(session: Session) -> None:
+    created = create_recipe(session, **_recipe_payload())
+
+    updated = update_recipe(
+        session,
+        created.id,
+        description="Quick breakfast in 10 minutes",
+        ingredients=["egg", "bread", "salt", "pepper"],
+    )
+
+    assert updated is not None
+    assert updated.description == "Quick breakfast in 10 minutes"
+    assert "pepper" in updated.ingredients
+
+
+def test_list_recipes(session: Session) -> None:
+    create_recipe(session, **_recipe_payload())
+
+    all_recipes = list_recipes(session)
+
+    assert len(all_recipes) == 1
+
+
+def test_delete_recipe(session: Session) -> None:
+    created = create_recipe(session, **_recipe_payload())
+
+    assert delete_recipe(session, created.id) is True
+    assert get_recipe(session, created.id) is None
