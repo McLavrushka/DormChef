@@ -1,0 +1,176 @@
+"""FastAPI application for recipe management."""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from collections.abc import Callable
+from typing import Annotated
+
+from fastapi import Depends
+from fastapi import FastAPI
+from fastapi import HTTPException
+from fastapi import Path
+from fastapi import Response
+from fastapi import status
+from pydantic import BaseModel
+from pydantic import ConfigDict
+from pydantic import Field
+from sqlalchemy.orm import Session
+
+from backend.database import create_recipe
+from backend.database import delete_recipe
+from backend.database import get_db
+from backend.database import get_recipe
+from backend.database import init_db
+from backend.database import list_recipes
+from backend.database import update_recipe
+
+
+class RecipeCreate(BaseModel):
+    """Payload for recipe creation."""
+
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., min_length=1)
+    ingredients: list[str] = Field(..., min_length=1)
+    steps: list[str] = Field(..., min_length=1)
+
+
+class RecipeUpdate(RecipeCreate):
+    """Payload for recipe update."""
+
+    title: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = Field(None, min_length=1)
+    ingredients: list[str] | None = Field(None, min_length=1)
+    steps: list[str] | None = Field(None, min_length=1)
+
+
+class RecipeResponse(RecipeCreate):
+    """Recipe returned by the API."""
+
+    id: int
+    model_config = ConfigDict(from_attributes=True)
+
+
+DbSession = Annotated[Session, Depends(get_db)]
+RecipeId = Annotated[
+    int,
+    Path(..., ge=1, description="Recipe identifier"),
+]
+
+
+def create_app(init_database: Callable[[], None] = init_db) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        init_database()
+        yield
+
+    api = FastAPI(
+        title="DormChef API",
+        description="API for creating, viewing, and updating recipes.",
+        version="1.0.0",
+        lifespan=lifespan,
+    )
+
+    @api.post(
+        "/recipes",
+        response_model=RecipeResponse,
+        status_code=status.HTTP_201_CREATED,
+        summary="Create recipe",
+        description=(
+            "Create a new recipe with title, description, "
+            "ingredients, and steps."
+        ),
+        tags=["recipes"],
+    )
+    def create_recipe_endpoint(
+        payload: RecipeCreate,
+        db: DbSession,
+    ) -> RecipeResponse:
+        recipe = create_recipe(
+            db,
+            title=payload.title,
+            description=payload.description,
+            ingredients=payload.ingredients,
+            steps=payload.steps,
+        )
+        return RecipeResponse.model_validate(recipe)
+
+    @api.get(
+        "/recipes",
+        response_model=list[RecipeResponse],
+        summary="List recipes",
+        description="Return all stored recipes ordered by identifier.",
+        tags=["recipes"],
+    )
+    def list_recipes_endpoint(db: DbSession) -> list[RecipeResponse]:
+        recipes = list_recipes(db)
+        return [RecipeResponse.model_validate(recipe) for recipe in recipes]
+
+    @api.get(
+        "/recipes/{recipe_id}",
+        response_model=RecipeResponse,
+        summary="Get recipe",
+        description="Return one recipe by identifier.",
+        tags=["recipes"],
+    )
+    def get_recipe_endpoint(
+        recipe_id: RecipeId,
+        db: DbSession,
+    ) -> RecipeResponse:
+        recipe = get_recipe(db, recipe_id)
+        if recipe is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Recipe not found",
+            )
+        return RecipeResponse.model_validate(recipe)
+
+    @api.put(
+        "/recipes/{recipe_id}",
+        response_model=RecipeResponse,
+        summary="Update recipe",
+        description="Update one or more recipe fields by identifier.",
+        tags=["recipes"],
+    )
+    def update_recipe_endpoint(
+        recipe_id: RecipeId,
+        payload: RecipeUpdate,
+        db: DbSession,
+    ) -> RecipeResponse:
+        recipe = update_recipe(
+            db,
+            recipe_id,
+            title=payload.title,
+            description=payload.description,
+            ingredients=payload.ingredients,
+            steps=payload.steps,
+        )
+        if recipe is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Recipe not found",
+            )
+        return RecipeResponse.model_validate(recipe)
+
+    @api.delete(
+        "/recipes/{recipe_id}",
+        response_model=None,
+        status_code=status.HTTP_204_NO_CONTENT,
+        response_class=Response,
+        summary="Delete recipe",
+        description="Delete one recipe by identifier.",
+        tags=["recipes"],
+    )
+    def delete_recipe_endpoint(recipe_id: RecipeId, db: DbSession) -> Response:
+        deleted = delete_recipe(db, recipe_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Recipe not found",
+            )
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    return api
+
+
+app = create_app()
