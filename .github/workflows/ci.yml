@@ -1,0 +1,42 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Lint — flake8
+        run: poetry run flake8 .
+
+      - name: Security — bandit
+        run: poetry run bandit -r . -lll
+
+      - name: Complexity — radon
+        run: poetry run radon cc . -s -a --fail C
+
+      - name: Tests + Coverage
+        run: poetry run pytest --cov=. --cov-fail-under=70
+
+      - name: Maintainability Index (warning only)
+        run: poetry run radon mi . -s
+        continue-on-error: true
