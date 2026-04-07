@@ -31,8 +31,8 @@ jobs:
       - name: Security — bandit
         run: poetry run bandit -r . -lll
 
-      - name: Complexity — radon
-        run: poetry run radon cc . -s -a --fail C
+      - name: Complexity — xenon (radon)
+        run: poetry run xenon --max-absolute B --max-modules B --max-average B .
 
       - name: Tests + Coverage
         run: poetry run pytest --cov=. --cov-fail-under=70

@@ -3209,6 +3209,23 @@ files = [
 h11 = ">=0.16.0,<1"
 
 [[package]]
+name = "xenon"
+version = "0.9.3"
+description = "Monitor code metrics for Python on your CI server"
+optional = false
+python-versions = "*"
+groups = ["dev"]
+files = [
+    {file = "xenon-0.9.3-py2.py3-none-any.whl", hash = "sha256:6e2c2c251cc5e9d01fe984e623499b13b2140fcbf74d6c03a613fa43a9347097"},
+    {file = "xenon-0.9.3.tar.gz", hash = "sha256:4a7538d8ba08aa5d79055fb3e0b2393c0bd6d7d16a4ab0fcdef02ef1f10a43fa"},
+]
+
+[package.dependencies]
+PyYAML = ">=5.0,<7.0"
+radon = ">=4,<7"
+requests = ">=2.0,<3.0"
+
+[[package]]
 name = "zope-event"
 version = "6.1"
 description = "Very basic event publishing system"
@@ -3273,4 +3290,4 @@ testing = ["coverage[toml]", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "c4eee42f5c5aadd13819ee9b62c4dc633cfb5fca814c3ceab4ee260fb47a7c67"
+content-hash = "f185516b05682bc3cadb9892902ccd545a7e8259f4b94ee9f57fd715ddfde429"
