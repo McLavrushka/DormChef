@@ -1,0 +1,25 @@
+# Coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Tests / tooling
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local app database (created by backend on run)
+dormchef.db

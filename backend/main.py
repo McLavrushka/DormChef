@@ -10,6 +10,7 @@ from fastapi import Depends
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import Path
+from fastapi import Query
 from fastapi import Response
 from fastapi import status
 from pydantic import BaseModel
@@ -24,6 +25,8 @@ from backend.database import get_recipe
 from backend.database import init_db
 from backend.database import list_recipes
 from backend.database import update_recipe
+from backend.search import filter_recipes_by_ingredients
+from backend.search import parse_ingredient_query
 
 
 class RecipeCreate(BaseModel):
@@ -105,6 +108,39 @@ def create_app(init_database: Callable[[], None] = init_db) -> FastAPI:
     def list_recipes_endpoint(db: DbSession) -> list[RecipeResponse]:
         recipes = list_recipes(db)
         return [RecipeResponse.model_validate(recipe) for recipe in recipes]
+
+    @api.get(
+        "/recipes/search",
+        response_model=list[RecipeResponse],
+        summary="Search recipes by ingredients",
+        description=(
+            "Return recipes that contain at least one of the given pantry "
+            "ingredients. Ingredients are comma-separated (e.g. tomato,egg). "
+            "Matching is case-insensitive. Better overlaps are listed first."
+        ),
+        tags=["recipes"],
+    )
+    def search_recipes_endpoint(
+        db: DbSession,
+        ingredients: Annotated[
+            str,
+            Query(
+                ...,
+                min_length=1,
+                description="Comma-separated ingredients from your pantry",
+                examples=["tomato,egg"],
+            ),
+        ],
+    ) -> list[RecipeResponse]:
+        tokens = parse_ingredient_query(ingredients)
+        if not tokens:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Provide at least one ingredient after trimming",
+            )
+        recipes = list_recipes(db)
+        matched = filter_recipes_by_ingredients(recipes, tokens)
+        return [RecipeResponse.model_validate(r) for r in matched]
 
     @api.get(
         "/recipes/{recipe_id}",
