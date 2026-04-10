@@ -121,6 +121,38 @@ def render_recipe_list_page() -> None:
         render_recipe_card(recipe)
 
 
+def render_suggest_section() -> None:
+    """Render the OpenFoodFacts ingredient suggestion widget."""
+    st.subheader("Ingredient suggestions")
+    st.caption(
+        "Start typing an ingredient and press "
+        "**Suggest** to get ideas from OpenFoodFacts."
+    )
+    suggest_query = st.text_input(
+        "Find an ingredient",
+        placeholder="tom",
+        key="suggest_input",
+    )
+    suggest_clicked = st.button("Suggest")
+
+    if not suggest_clicked or not suggest_query.strip():
+        return
+
+    result = request_api(
+        "GET",
+        "/ingredients/suggest",
+        params={"q": suggest_query.strip()},
+    )
+    if result["ok"] and result["data"]:
+        st.write("**Suggestions:**")
+        for name in result["data"]:
+            st.markdown(f"- {name}")
+    elif result["ok"]:
+        st.info("No suggestions found.")
+    else:
+        st.error(result["error"])
+
+
 def render_search_page() -> None:
     """Render ingredient-based recipe search."""
     st.header("Search by ingredients")
@@ -128,6 +160,9 @@ def render_search_page() -> None:
         "Enter the ingredients you already have and "
         "find matching recipes."
     )
+
+    render_suggest_section()
+    st.divider()
 
     ingredients_input = st.text_input(
         "Ingredients",

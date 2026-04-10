@@ -25,6 +25,7 @@ from backend.database import get_recipe
 from backend.database import init_db
 from backend.database import list_recipes
 from backend.database import update_recipe
+from backend.external_api import fetch_ingredient_suggestions
 from backend.search import filter_recipes_by_ingredients
 from backend.search import parse_ingredient_query
 
@@ -73,6 +74,36 @@ def create_app(init_database: Callable[[], None] = init_db) -> FastAPI:
         version="1.0.0",
         lifespan=lifespan,
     )
+
+    @api.get(
+        "/ingredients/suggest",
+        response_model=list[str],
+        summary="Suggest ingredients",
+        description=(
+            "Return ingredient suggestions from OpenFoodFacts "
+            "matching the query string. Rate-limited to 10 req/min "
+            "upstream — use on button press, not per keystroke."
+        ),
+        tags=["ingredients"],
+    )
+    async def suggest_ingredients_endpoint(
+        q: Annotated[
+            str,
+            Query(
+                ...,
+                min_length=1,
+                description="Ingredient search query",
+                examples=["tomato"],
+            ),
+        ],
+    ) -> list[str]:
+        try:
+            return await fetch_ingredient_suggestions(q)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="OpenFoodFacts API is unavailable",
+            )
 
     @api.post(
         "/recipes",
