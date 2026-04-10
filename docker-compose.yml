@@ -10,5 +10,18 @@ services:
     volumes:
       - dormchef_data:/app/data
 
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: dormchef-frontend
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "${FRONTEND_PORT:-8501}:8501"
+    restart: unless-stopped
+    depends_on:
+      - api
+
 volumes:
   dormchef_data:
