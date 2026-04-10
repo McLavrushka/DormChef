@@ -24,11 +24,19 @@ xenon = "^0.9.3"
 mutmut = "^2.4.0"
 hypothesis = "^6.100.0"
 locust = "^2.24.0"
+selenium = "^4.20.0"
 pre-commit = "^4.5.1"
 
 [tool.flake8]
 max-line-length = 88
 exclude = [".git", "__pycache__", ".venv"]
+
+[tool.coverage.run]
+omit = [
+    "locustfile.py",
+    "tests/test_e2e.py",
+    "frontend/*",
+]
 
 [build-system]
 requires = ["poetry-core"]

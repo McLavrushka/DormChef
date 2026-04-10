@@ -11,14 +11,23 @@ Run:
 
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
+
+selenium = pytest.importorskip("selenium")
+
+from selenium import webdriver  # noqa: E402
+from selenium.webdriver.chrome.options import Options  # noqa: E402
+from selenium.webdriver.common.by import By  # noqa: E402
+from selenium.webdriver.support import expected_conditions as EC  # noqa: E402
+from selenium.webdriver.support.ui import WebDriverWait  # noqa: E402
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("CI") == "true",
+    reason="E2E tests require running frontend and backend",
+)
 
 FRONTEND_URL = "http://localhost:8501"
 WAIT_TIMEOUT = 15
