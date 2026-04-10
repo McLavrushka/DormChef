@@ -266,22 +266,31 @@ def build_http_error_message(response: httpx.Response) -> str:
 def extract_error_detail(data: Any) -> str:
     """Extract a readable detail message from API error payloads."""
     if isinstance(data, dict):
-        detail = data.get("detail")
-        if isinstance(detail, str):
-            return detail
-        if isinstance(detail, list):
-            parts = [extract_error_detail(item) for item in detail]
-            return "; ".join(part for part in parts if part)
-        return ""
+        return extract_error_detail_from_mapping(data)
 
     if isinstance(data, list):
-        parts = [extract_error_detail(item) for item in data]
-        return "; ".join(part for part in parts if part)
+        return join_error_details(data)
 
     if isinstance(data, str):
         return data
 
     return ""
+
+
+def extract_error_detail_from_mapping(data: dict[str, Any]) -> str:
+    """Extract a readable detail message from a mapping payload."""
+    detail = data.get("detail")
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, list):
+        return join_error_details(detail)
+    return ""
+
+
+def join_error_details(items: list[Any]) -> str:
+    """Join nested error messages into one readable string."""
+    parts = [extract_error_detail(item) for item in items]
+    return "; ".join(part for part in parts if part)
 
 
 if __name__ == "__main__":
