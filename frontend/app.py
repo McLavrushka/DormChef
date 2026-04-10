@@ -129,6 +129,35 @@ def render_search_page() -> None:
         "find matching recipes."
     )
 
+    st.subheader("Ingredient suggestions")
+    st.caption(
+        "Start typing an ingredient and press "
+        "**Suggest** to get ideas from OpenFoodFacts."
+    )
+    suggest_query = st.text_input(
+        "Find an ingredient",
+        placeholder="tom",
+        key="suggest_input",
+    )
+    suggest_clicked = st.button("Suggest")
+
+    if suggest_clicked and suggest_query.strip():
+        result = request_api(
+            "GET",
+            "/ingredients/suggest",
+            params={"q": suggest_query.strip()},
+        )
+        if result["ok"] and result["data"]:
+            st.write("**Suggestions:**")
+            for name in result["data"]:
+                st.markdown(f"- {name}")
+        elif result["ok"]:
+            st.info("No suggestions found.")
+        else:
+            st.error(result["error"])
+
+    st.divider()
+
     ingredients_input = st.text_input(
         "Ingredients",
         placeholder="egg, tomato, pasta",
