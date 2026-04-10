@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
 import streamlit as st
 
-API_URL = "http://localhost:8000"
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 REQUEST_TIMEOUT = 10.0
 
 
