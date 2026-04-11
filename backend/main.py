@@ -25,9 +25,10 @@ from backend.database import get_recipe
 from backend.database import init_db
 from backend.database import list_recipes
 from backend.database import update_recipe
-from backend.external_api import fetch_ingredient_suggestions
 from backend.search import filter_recipes_by_ingredients
 from backend.search import parse_ingredient_query
+from backend.themealdb_client import fetch_meal_detail_by_id
+from backend.themealdb_client import fetch_meal_summaries_by_main_ingredient
 
 
 class RecipeCreate(BaseModel):
@@ -55,10 +56,42 @@ class RecipeResponse(RecipeCreate):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MealDbMealSummary(BaseModel):
+    """Meal summary from TheMealDB (English, public API)."""
+
+    id: str = Field(..., description="TheMealDB meal id")
+    name: str = Field(..., description="Meal title")
+    thumbnail: str | None = Field(
+        None,
+        description="Thumbnail image URL from TheMealDB",
+    )
+
+
+class MealDbRecipeDetail(BaseModel):
+    """Full meal from TheMealDB lookup (shown in-app)."""
+
+    id: str
+    name: str
+    category: str | None = None
+    area: str | None = None
+    thumbnail: str | None = None
+    ingredients: list[str]
+    instructions: str
+    youtube: str | None = None
+
+
 DbSession = Annotated[Session, Depends(get_db)]
 RecipeId = Annotated[
     int,
     Path(..., ge=1, description="Recipe identifier"),
+]
+MealDbExternalId = Annotated[
+    str,
+    Path(
+        ...,
+        pattern=r"^[0-9]+$",
+        description="TheMealDB numeric meal id",
+    ),
 ]
 
 
@@ -74,36 +107,6 @@ def create_app(init_database: Callable[[], None] = init_db) -> FastAPI:
         version="1.0.0",
         lifespan=lifespan,
     )
-
-    @api.get(
-        "/ingredients/suggest",
-        response_model=list[str],
-        summary="Suggest ingredients",
-        description=(
-            "Return ingredient suggestions from OpenFoodFacts "
-            "matching the query string. Rate-limited to 10 req/min "
-            "upstream — use on button press, not per keystroke."
-        ),
-        tags=["ingredients"],
-    )
-    async def suggest_ingredients_endpoint(
-        q: Annotated[
-            str,
-            Query(
-                ...,
-                min_length=1,
-                description="Ingredient search query",
-                examples=["tomato"],
-            ),
-        ],
-    ) -> list[str]:
-        try:
-            return await fetch_ingredient_suggestions(q)
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="OpenFoodFacts API is unavailable",
-            )
 
     @api.post(
         "/recipes",
@@ -172,6 +175,66 @@ def create_app(init_database: Callable[[], None] = init_db) -> FastAPI:
         recipes = list_recipes(db)
         matched = filter_recipes_by_ingredients(recipes, tokens)
         return [RecipeResponse.model_validate(r) for r in matched]
+
+    @api.get(
+        "/external/themealdb/meals",
+        response_model=list[MealDbMealSummary],
+        summary="Meals by main ingredient (TheMealDB)",
+        description=(
+            "Filter public meals by main ingredient in English "
+            "(e.g. chicken, salmon). Multi-word values use underscores "
+            "in TheMealDB (chicken breast → chicken_breast)."
+        ),
+        tags=["external"],
+    )
+    async def themealdb_meals_endpoint(
+        ingredient: Annotated[
+            str,
+            Query(
+                ...,
+                min_length=1,
+                description="Main ingredient name",
+                examples=["chicken"],
+            ),
+        ],
+    ) -> list[MealDbMealSummary]:
+        try:
+            rows = await fetch_meal_summaries_by_main_ingredient(ingredient)
+            return [MealDbMealSummary(**row) for row in rows]
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="TheMealDB API is unavailable",
+            )
+
+    @api.get(
+        "/external/themealdb/meals/{meal_id}",
+        response_model=MealDbRecipeDetail,
+        summary="Meal detail by id (TheMealDB)",
+        description=(
+            "Full recipe text and ingredients from TheMealDB lookup.php "
+            "for display inside DormChef."
+        ),
+        tags=["external"],
+    )
+    async def themealdb_meal_detail_endpoint(
+        meal_id: MealDbExternalId,
+    ) -> MealDbRecipeDetail:
+        try:
+            row = await fetch_meal_detail_by_id(meal_id)
+            if row is None or not row.get("name"):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Meal not found",
+                )
+            return MealDbRecipeDetail(**row)
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="TheMealDB API is unavailable",
+            )
 
     @api.get(
         "/recipes/{recipe_id}",

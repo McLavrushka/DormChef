@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 import httpx
@@ -46,8 +47,8 @@ def render_header() -> None:
         "by ingredients."
     )
 
-    st.sidebar.header("API")
-    st.sidebar.code(API_URL)
+    st.sidebar.header("API details")
+    st.sidebar.code(API_URL + "/docs")
 
 
 def render_add_recipe_page() -> None:
@@ -102,7 +103,7 @@ def render_add_recipe_page() -> None:
 def render_recipe_list_page() -> None:
     """Render a list of all recipes."""
     st.header("All recipes")
-    st.write("Browse every recipe currently stored in the backend.")
+    st.write("Browse every recipe currently stored.")
 
     if st.button("Refresh recipes", use_container_width=False):
         st.rerun()
@@ -122,84 +123,153 @@ def render_recipe_list_page() -> None:
         render_recipe_card(recipe)
 
 
-def render_suggest_section() -> None:
-    """Render the OpenFoodFacts ingredient suggestion widget."""
-    st.subheader("Ingredient suggestions")
-    st.caption(
-        "Start typing an ingredient and press "
-        "**Suggest** to get ideas from OpenFoodFacts."
-    )
-    suggest_query = st.text_input(
-        "Find an ingredient",
-        placeholder="tom",
-        key="suggest_input",
-    )
-    suggest_clicked = st.button("Suggest")
-
-    if not suggest_clicked or not suggest_query.strip():
-        return
-
-    result = request_api(
-        "GET",
-        "/ingredients/suggest",
-        params={"q": suggest_query.strip()},
-    )
-    if result["ok"] and result["data"]:
-        st.write("**Suggestions:**")
-        for name in result["data"]:
-            st.markdown(f"- {name}")
-    elif result["ok"]:
-        st.info("No suggestions found.")
-    else:
-        st.error(result["error"])
-
-
 def render_search_page() -> None:
     """Render ingredient-based recipe search."""
     st.header("Search by ingredients")
     st.write(
-        "Enter the ingredients you already have and "
-        "find matching recipes."
+        "Search **your saved recipes** first, then explore ideas from "
+        "TheMealDB by one English main ingredient."
     )
 
-    render_suggest_section()
-    st.divider()
-
+    st.subheader("Your recipes (DormChef)")
     ingredients_input = st.text_input(
         "Ingredients",
         placeholder="egg, tomato, pasta",
+        key="dormchef_search_ingredients",
     )
     search_clicked = st.button("Search", type="primary")
 
-    if not search_clicked:
+    if search_clicked:
+        query = ",".join(parse_comma_separated_items(ingredients_input))
+        if not query:
+            st.error("Please enter at least one ingredient.")
+        else:
+            result = request_api(
+                "GET",
+                "/recipes/search",
+                params={"ingredients": query},
+            )
+            if not result["ok"]:
+                st.error(result["error"])
+            elif not result["data"]:
+                st.warning("No recipes matched your ingredients.")
+            else:
+                recipes = result["data"]
+                st.success(f"Found {len(recipes)} matching recipe(s).")
+                for recipe in recipes:
+                    render_recipe_card(recipe)
+    else:
         st.info(
-            "Add one or more comma-separated ingredients "
-            "to start searching."
+            "Add one or more comma-separated ingredients and click Search."
         )
-        return
 
-    query = ",".join(parse_comma_separated_items(ingredients_input))
+    st.divider()
+    render_mealdb_meal_ideas_section()
+
+
+def _mealdb_detail_header(detail: dict[str, Any]) -> None:
+    st.caption("Recipe data from TheMealDB (English).")
+    st.subheader(detail.get("name", "Recipe"))
+    parts = [p for p in (detail.get("category"), detail.get("area")) if p]
+    if parts:
+        st.caption(" · ".join(parts))
+
+
+def _mealdb_detail_ingredients_and_steps(detail: dict[str, Any]) -> None:
+    st.markdown("**Ingredients**")
+    for line in detail.get("ingredients") or []:
+        st.markdown(f"- {line}")
+    st.markdown("**Instructions**")
+    text = (detail.get("instructions") or "").replace("\r\n", "\n\n")
+    st.markdown(text)
+
+
+def _mealdb_detail_youtube(detail: dict[str, Any]) -> None:
+    yt = detail.get("youtube")
+    if not yt or not str(yt).startswith("http"):
+        return
+    st.markdown("**Video**")
+    st.video(str(yt))
+
+
+def render_mealdb_detail(detail: dict[str, Any]) -> None:
+    """Render full TheMealDB recipe inside the app."""
+    _mealdb_detail_header(detail)
+    _mealdb_detail_ingredients_and_steps(detail)
+    _mealdb_detail_youtube(detail)
+
+
+@st.dialog("TheMealDB recipe", width="large")
+def _mealdb_recipe_dialog(meal_id: str) -> None:
+    with st.spinner("Loading recipe…"):
+        dr = request_api(
+            "GET",
+            f"/external/themealdb/meals/{meal_id}",
+            timeout=45.0,
+        )
+    if not dr["ok"]:
+        st.error(dr["error"])
+        return
+    render_mealdb_detail(dr["data"])
+
+
+def _mealdb_run_search(main_ing: str, finder: bool) -> None:
+    if not finder:
+        return
+    query = main_ing.strip()
     if not query:
-        st.error("Please enter at least one ingredient.")
+        st.warning("Enter a main ingredient.")
         return
-
-    result = request_api(
-        "GET",
-        "/recipes/search",
-        params={"ingredients": query},
-    )
+    with st.spinner("Loading from TheMealDB…"):
+        result = request_api(
+            "GET",
+            "/external/themealdb/meals",
+            params={"ingredient": query},
+            timeout=45.0,
+        )
     if not result["ok"]:
         st.error(result["error"])
         return
+    if not result["data"]:
+        st.info("No meals found. Try another English name (e.g. salmon).")
+        st.session_state.themealdb_meals = []
+        return
+    st.session_state.themealdb_meals = result["data"]
 
-    recipes = result["data"]
-    if not recipes:
-        st.warning("No recipes matched your ingredients.")
+
+def _mealdb_list_result_rows(meals: list[Any]) -> None:
+    st.success(f"Found {len(meals)} meal(s).")
+    for item in meals:
+        mid = str(item.get("id", ""))
+        with st.container():
+            st.markdown(f"**{item.get('name', 'Meal')}**")
+            if st.button("Open recipe", key=f"mdb_detail_btn_{mid}"):
+                _mealdb_recipe_dialog(mid)
+
+
+def render_mealdb_meal_ideas_section() -> None:
+    """Show meals from TheMealDB that use a given main ingredient."""
+    if "themealdb_meals" not in st.session_state:
+        st.session_state.themealdb_meals = None
+
+    st.subheader("Recipe ideas (TheMealDB)")
+    st.caption(
+        "Public meals filtered by **one main ingredient** in English "
+        "(e.g. chicken, rice). Use **Open recipe** for ingredients and steps."
+    )
+    main_ing = st.text_input(
+        "Main ingredient",
+        placeholder="chicken",
+        key="themealdb_main_ingredient",
+    )
+    finder = st.button("Find meals", key="themealdb_meal_find")
+    _mealdb_run_search(main_ing, finder)
+
+    meals = st.session_state.themealdb_meals
+    if not meals:
         return
 
-    st.success(f"Found {len(recipes)} matching recipe(s).")
-    for recipe in recipes:
-        render_recipe_card(recipe)
+    _mealdb_list_result_rows(meals)
 
 
 def render_recipe_card(recipe: dict[str, Any], expanded: bool = False) -> None:
@@ -223,14 +293,32 @@ def render_recipe_card(recipe: dict[str, Any], expanded: bool = False) -> None:
         st.subheader("Steps")
         if steps:
             for index, step in enumerate(steps, start=1):
-                st.markdown(f"{index}. {step}")
+                clean = strip_leading_step_number(step)
+                st.markdown(f"{index}. {clean}")
         else:
             st.caption("No steps provided.")
 
 
+_STEP_NUM_PREFIX = re.compile(r"^\d+[\.\)]\s*")
+
+
+def strip_leading_step_number(text: str) -> str:
+    """Strip a leading '1.' / '2)' prefix so display is not duplicated."""
+    s = text.strip()
+    return _STEP_NUM_PREFIX.sub("", s, count=1).strip() or s
+
+
 def parse_multiline_items(raw_value: str) -> list[str]:
     """Convert a multi-line text field into a clean string list."""
-    return [item.strip() for item in raw_value.splitlines() if item.strip()]
+    items: list[str] = []
+    for line in raw_value.splitlines():
+        item = line.strip()
+        if not item:
+            continue
+        item = strip_leading_step_number(item)
+        if item:
+            items.append(item)
+    return items
 
 
 def parse_comma_separated_items(raw_value: str) -> list[str]:
@@ -265,10 +353,15 @@ def request_api(
     *,
     params: dict[str, Any] | None = None,
     json: dict[str, Any] | None = None,
+    timeout: float | None = None,
 ) -> dict[str, Any]:
     """Perform an API request and normalize success/error responses."""
+    effective_timeout = REQUEST_TIMEOUT if timeout is None else timeout
     try:
-        with httpx.Client(base_url=API_URL, timeout=REQUEST_TIMEOUT) as client:
+        with httpx.Client(
+            base_url=API_URL,
+            timeout=effective_timeout,
+        ) as client:
             response = client.request(method, path, params=params, json=json)
             response.raise_for_status()
     except httpx.HTTPStatusError as error:
