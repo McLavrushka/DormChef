@@ -1,23 +1,22 @@
-name: CI Pipeline
+name: CI
 
 on:
   push:
-    branches: [ main, dev ]
+    branches: [ dev, main ]
   pull_request:
-    branches: [ main, dev ]
+    branches: [ dev, main ]
 
 jobs:
   quality:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.13'
 
       - name: Install Poetry
         run: pip install poetry
@@ -25,18 +24,57 @@ jobs:
       - name: Install dependencies
         run: poetry install
 
-      - name: Lint — flake8
+      - name: Flake8
         run: poetry run flake8 .
 
-      - name: Security — bandit
+      - name: Bandit
         run: poetry run bandit -r . -lll
 
-      - name: Complexity — xenon (radon)
-        run: poetry run xenon --max-absolute B --max-modules B --max-average B .
+      - name: Radon CC (report only)
+        run: poetry run radon cc backend frontend -s -a
+        continue-on-error: true
+
+      # Numeric CC gate: strictly < 10 (default max allowed = 9).
+      - name: Cyclomatic complexity (numeric gate)
+        run: poetry run python scripts/check_max_cc.py
+
+      - name: Radon MI
+        run: |
+            poetry run radon mi . -s
+            echo "--- Numeric scores ---"
+            poetry run radon mi . --json | python3 -c "
+            import json, sys
+            data = json.load(sys.stdin)
+            scores = [v['mi'] for v in data.values()]
+            avg = sum(scores) / len(scores) if scores else 0
+            print(f'Average MI: {avg:.1f}')
+            print('PASS' if avg >= 65 else 'WARNING: below 65')
+            "
+        continue-on-error: true
 
       - name: Tests + Coverage
         run: poetry run pytest --cov=. --cov-fail-under=70
 
-      - name: Maintainability Index (warning only)
-        run: poetry run radon mi . -s
-        continue-on-error: true
+      - name: Check OpenAPI docs
+        run: |
+            poetry run python -c "
+            import sys
+            from backend.main import app
+
+            schema = app.openapi()
+            paths = schema.get('paths', {})
+            missing = []
+
+            for path, methods in paths.items():
+                for method, details in methods.items():
+                    if method in ['get','post','put','delete','patch']:
+                        if not details.get('summary') and not details.get('description'):
+                            missing.append(f'{method.upper()} {path}')
+
+            if missing:
+                print('FAIL: endpoints without documentation:')
+                for e in missing: print(f'  {e}')
+                sys.exit(1)
+            else:
+                print(f'PASS: all {sum(len(v) for v in paths.values())} endpoints documented')
+            "

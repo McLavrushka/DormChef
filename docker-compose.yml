@@ -1,0 +1,27 @@
+services:
+  api:
+    build: .
+    container_name: dormchef-api
+    environment:
+      DATABASE_URL: sqlite:////app/data/dormchef.db
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    restart: unless-stopped
+    volumes:
+      - dormchef_data:/app/data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: dormchef-frontend
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "${FRONTEND_PORT:-8501}:8501"
+    restart: unless-stopped
+    depends_on:
+      - api
+
+volumes:
+  dormchef_data:

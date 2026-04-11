@@ -1,0 +1,20 @@
+repos:
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        args: [ --max-line-length=88 ]
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.8
+    hooks:
+      - id: bandit
+        args: [ -lll ]
+        exclude: tests/
+  - repo: local
+    hooks:
+      - id: check-max-cc
+        name: Cyclomatic complexity (max 9)
+        entry: poetry run python scripts/check_max_cc.py
+        language: system
+        pass_filenames: false
