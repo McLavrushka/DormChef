@@ -1,85 +1,112 @@
-# DormChef 🍳
+# DormChef
 
-A recipe sharing web app for students. Search recipes by ingredients you already have.
+A web app for sharing simple recipes among students.
+ You can add recipes, browse the catalog, and find dishes based on ingredients you already have (“what’s in my fridge?”). Built for a software quality course (SQR), with emphasis on automated CI quality gates and a broad set of testing techniques.
 
-## Tech Stack
-- **Backend:** FastAPI + SQLite
-- **Frontend:** Streamlit
-- **Dependency management:** Poetry
-- **CI/CD:** GitHub Actions
+## Features
 
-## Project Structure
+- **Recipes:** create, read, list, update, and delete via REST API and the Streamlit UI.
+- **Ingredient-based search:** match **your** stored recipes to a pantry list (comma-separated ingredients).
+- **TheMealDB:** browse public English meals by **one main ingredient** (`GET /external/themealdb/meals`) and open **full text in a dialog** (`GET /external/themealdb/meals/{meal_id}`).
+- **API docs:** auto-generated OpenAPI/Swagger from FastAPI (`/docs`).
 
-```
-dormchef/
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-├── backend/
+## Tech stack
 
-├── frontend/
-│   ├── __init__.py
-│   └── app.py
-├── tests/
-├── locustfile.py
-├── pyproject.toml
-└── README.md
-```
+| Component | Technology |
+|-----------|------------|
+| Language | Python 3.11–3.13|
+| Dependencies | Poetry |
+| Backend | FastAPI, Uvicorn, SQLAlchemy, SQLite |
+| Frontend | Streamlit |
+| Containers | Docker, Docker Compose |
+| CI | GitHub Actions |
 
-## Getting Started
+## Quick start (Docker Compose)
+
+Recommended for demos and grading: API and frontend start together; SQLite data is stored in a named volume.
 
 ```bash
-# Install dependencies
+docker compose up --build
+```
+
+After startup:
+
+- **API:** [http://localhost:8000](http://localhost:8000) (interactive docs: [http://localhost:8000/docs](http://localhost:8000/docs))
+- **Streamlit UI:** [http://localhost:8501](http://localhost:8501)
+
+Override ports with environment variables:
+
+```bash
+APP_PORT=8000 FRONTEND_PORT=8501 docker compose up --build
+```
+
+Inside the Compose network the frontend calls the API at `http://api:8000` (see `docker-compose.yml`).
+
+## Local run (without Docker)
+
+Install Python (3.11–3.13) and [Poetry](https://python-poetry.org/).
+
+```bash
 poetry install
+```
 
-# Run backend //not completed yet
-poetry run uvicorn backend.main:app --reload
+**Terminal 1 — backend:**
 
-# Run frontend (in a separate terminal) //not completed yet
+```bash
+poetry run uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Terminal 2 — frontend** (by default the app expects the API at `http://localhost:8000`):
+
+```bash
 poetry run streamlit run frontend/app.py
 ```
 
-## Branch Strategy
+Open the URL printed by the CLI (usually [http://localhost:8501](http://localhost:8501)).
+
+The sidebar shows the **API URL** Streamlit uses (`API_URL`, default `http://localhost:8000`).
+
+## Repository layout
 
 ```
-main   ← stable versions only (never push directly)
-  ↑
-  PR (2 approvals required + CI green)
-  ↑
-dev    ← main working branch
-  ↑
-  PR (1 approval required + CI green)
-  ↑
-feature/your-task  ← your personal branch
+├── backend/           # FastAPI app, models, DB, search, TheMealDB client
+├── frontend/          # Streamlit UI
+├── tests/             # Automated tests (pytest); sole test root (see `tool.pytest.ini_options`)
+├── scripts/           # Helpers (e.g. cyclomatic complexity threshold)
+├── .github/workflows/ # CI pipeline
+├── docker-compose.yml
+├── Dockerfile         # API image
+├── frontend/Dockerfile
+├── locustfile.py      # load testing (local)
+├── pyproject.toml     # Poetry
+└── mutants/           # gitignored
 ```
 
-## Git Workflow
+## Testing techniques
 
-**1. Always start from updated dev:**
-```bash
-git checkout dev
-git pull origin dev
-git checkout -b feature/your-task-name
-```
+| Technique | Where | Notes |
+|-----------|-------|-------|
+| **Unit tests** | `tests/test_recipes.py`, `tests/test_search.py`, `tests/test_recipe_crud.py`, `tests/test_themealdb_client.py` | Logic, API, TheMealDB client (with HTTP mocked) |
+| **Integration tests** | `tests/test_integration.py` | Full recipe lifecycle via `TestClient` and the real app stack |
+| **Property-based** | `tests/test_search.py` (Hypothesis) | Normalization and ingredient-query parsing on generated inputs |
+| **E2E (UI)** | `tests/test_e2e.py` (Selenium) | Run manually with backend + Streamlit up and Chrome/Chromedriver; skipped in CI |
+| **Coverage** | `pytest-cov`, **≥70%** gate in CI | `locustfile.py`, E2E, and frontend code omitted from the report|
+| **Mutation testing** | **mutmut 3.x** (dev dependency, pinned in Poetry) | for backend |
+| **Load testing** | `locustfile.py` | Run locally against a running internal/external API |
 
-**2. Make small, frequent commits while working:**
-```bash
-git add .
-git commit -m "Add POST /recipes endpoint"
-git push origin feature/your-task-name
-```
+## Static analysis and CI quality gates
 
-**3. When done — open Pull Request into `dev` on GitHub, notify the team in chat.**
+GitHub Actions runs on `main` and `dev` (including pull requests):
 
-**4. Someone else reviews and approves — then you merge.**
+- **flake8** — style and errors; gate expects a clean run.
+- **bandit** — common security issues in Python code.
+- **Cyclomatic complexity** — numeric radon threshold: each block **at most 9** (strictly below 10), enforced by `scripts/check_max_cc.py`.
+- **Radon MI** — maintainability index; CI prints the average and warns if below target (non-blocking).
+- **pytest** — full suite with `--cov-fail-under=70`.
+- **OpenAPI** — every HTTP operation must have `summary` or `description` in the schema.
 
-## Commit Message Rules
+For local commits, **pre-commit** (`.pre-commit-config.yaml`) can run flake8, bandit, and the same CC check.
 
-Format: `Verb + what was done`
+## External API (TheMealDB)
 
-✅ Good:
-```
-Add POST /recipes endpoint
-Add unit tests for search algorithm
-Fix flake8 errors in models.py
-Add OpenFoodF
+The app uses the free **[TheMealDB](https://www.themealdb.com/api.php)** JSON API (`v1/1`): **`filter.php?i=…`** for meals by main ingredient, **`lookup.php?i={id}`** for full recipe text. If TheMealDB is unreachable, the backend returns HTTP **502** on those routes; unknown meal id returns **404**.
