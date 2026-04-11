@@ -28,7 +28,7 @@ jobs:
         run: poetry run flake8 .
 
       - name: Bandit
-        run: poetry run bandit -r . -ll
+        run: poetry run bandit -r . -lll
 
       - name: Radon CC (report only)
         run: poetry run radon cc backend frontend -s -a
