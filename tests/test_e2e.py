@@ -19,6 +19,7 @@ import pytest
 selenium = pytest.importorskip("selenium")
 
 from selenium import webdriver  # noqa: E402
+from selenium.common.exceptions import NoSuchElementException  # noqa: E402
 from selenium.webdriver.chrome.options import Options  # noqa: E402
 from selenium.webdriver.common.by import By  # noqa: E402
 from selenium.webdriver.support import expected_conditions as EC  # noqa: E402
@@ -56,16 +57,49 @@ def _wait_for_streamlit(driver: webdriver.Chrome) -> None:
 
 
 def _click_sidebar_page(driver: webdriver.Chrome, label: str) -> None:
-    """Click a radio option in the sidebar."""
-    sidebar = driver.find_element(
-        By.CSS_SELECTOR, "[data-testid='stSidebar']",
+    """Click a radio option in the sidebar.
+
+    Streamlit 1.33+ may nest option text; prefer short-text JS match.
+    """
+    sidebar = WebDriverWait(driver, WAIT_TIMEOUT).until(
+        EC.presence_of_element_located(
+            (By.CSS_SELECTOR, "[data-testid='stSidebar']"),
+        ),
     )
-    options = sidebar.find_elements(By.TAG_NAME, "label")
-    for option in options:
-        if label.lower() in option.text.lower():
-            option.click()
-            time.sleep(1)
-            return
+    needle = label.lower()
+    clicked = driver.execute_script(
+        """
+        const root = arguments[0];
+        const needle = arguments[1];
+        const candidates = [];
+        for (const el of root.querySelectorAll(
+            'label, [role="radio"], button, p, span, div',
+        )) {
+          const t = (el.innerText || el.textContent || '').trim();
+          if (!t || t.length > 200) {
+            continue;
+          }
+          if (t.toLowerCase().includes(needle)) {
+            candidates.push([t.length, el]);
+          }
+        }
+        candidates.sort((a, b) => a[0] - b[0]);
+        for (const [, el] of candidates) {
+          try {
+            el.click();
+            return true;
+          } catch (e) {
+            continue;
+          }
+        }
+        return false;
+        """,
+        sidebar,
+        needle,
+    )
+    if clicked:
+        time.sleep(1)
+        return
     raise ValueError(f"Sidebar option '{label}' not found")
 
 
@@ -77,8 +111,12 @@ def test_add_recipe_via_form(driver: webdriver.Chrome) -> None:
     """Fill and submit the 'Add recipe' form, verify success."""
     driver.get(FRONTEND_URL)
     _wait_for_streamlit(driver)
-    _click_sidebar_page(driver, "Add recipe")
-    time.sleep(1)
+    # Add recipe is default; Streamlit may not use simple sidebar labels.
+    try:
+        driver.find_element(By.CSS_SELECTOR, "input[aria-label='Title']")
+    except NoSuchElementException:
+        _click_sidebar_page(driver, "Add recipe")
+        time.sleep(1)
 
     title_input = driver.find_element(
         By.CSS_SELECTOR,
