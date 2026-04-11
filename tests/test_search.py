@@ -73,6 +73,14 @@ def test_filter_recipes_orders_by_match_count() -> None:
     assert [r.id for r in out] == [2, 1]
 
 
+def test_filter_recipes_tiebreaks_by_recipe_id() -> None:
+    """Same match count: ascending id (stable secondary key)."""
+    hi = _recipe(10, "Hi", ["egg"])
+    lo = _recipe(5, "Lo", ["egg"])
+    out = filter_recipes_by_ingredients([hi, lo], ["egg"])
+    assert [r.id for r in out] == [5, 10]
+
+
 def test_count_query_hits() -> None:
     r = _recipe(1, "x", ["a", "b", "c"])
     assert count_query_hits(r, ["a", "z"]) == 1

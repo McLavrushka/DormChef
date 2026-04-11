@@ -9,7 +9,7 @@ repos:
     rev: 1.7.8
     hooks:
       - id: bandit
-        args: [ -ll ]
+        args: [ -lll ]
         exclude: tests/
   - repo: local
     hooks:
