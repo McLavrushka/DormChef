@@ -11,8 +11,10 @@ repos:
       - id: bandit
         args: [ -ll ]
         exclude: tests/
-  - repo: https://github.com/yunojuno/pre-commit-xenon
-    rev: cc59b0431a5d072786b59430e9b342b2881064f6
+  - repo: local
     hooks:
-      - id: xenon
-        args: ["--max-average=A", "--max-modules=A", "--max-absolute=B"]
+      - id: check-max-cc
+        name: Cyclomatic complexity (max 9)
+        entry: poetry run python scripts/check_max_cc.py
+        language: system
+        pass_filenames: false
