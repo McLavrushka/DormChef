@@ -31,11 +31,12 @@ jobs:
         run: poetry run bandit -r . -ll
 
       - name: Radon CC (report only)
-        run: poetry run radon cc . -s -a
+        run: poetry run radon cc backend frontend -s -a
         continue-on-error: true
 
-      - name: Xenon (complexity gate)
-        run: poetry run xenon --max-absolute B --max-modules A --max-average A .
+      # Numeric CC gate: strictly < 10 (default max allowed = 9).
+      - name: Cyclomatic complexity (numeric gate)
+        run: poetry run python scripts/check_max_cc.py
 
       - name: Radon MI
         run: |
@@ -55,7 +56,6 @@ jobs:
         run: poetry run pytest --cov=. --cov-fail-under=70
 
       - name: Check OpenAPI docs
-        continue-on-error: true   # Remove when docs are complete
         run: |
             poetry run python -c "
             import sys
