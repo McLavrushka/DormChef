@@ -1,4 +1,4 @@
-"""Recipe list and add-recipe pages."""
+"""Recipe list and add-recipe pages"""
 
 from __future__ import annotations
 
